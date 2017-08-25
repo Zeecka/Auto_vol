@@ -1,0 +1,258 @@
+#!/bin/bash
+
+## Author :	Maki
+## Contact : alan.marrec@protonmail.comn
+
+# Colors management
+NC='\033[0m' # No color
+RED='\033[0;31m'
+LRED='\033[1;31m'
+GREEN='\033[0;32m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+BLUE='\033[1;34m'
+GRAY='\033[1;37m'
+
+# Argument management
+#function Usage() {
+usage="$(basename "$0") [-h] [-d <dump_name>] [-f <folder_name>] -- Script that performs basic volatility command and stores them into a directory
+
+where:
+	-h	Show this help
+	-d 	Name of the memory dump to analyze
+	-f	Name of the folder
+
+Examples : ./auto_vol -d /home/maki/memory.raw -f /home/maki/tests"
+
+while getopts "hd:f" optionName; do
+	case "$optionName" in
+		h)	printf "$usage" 
+			exit ;;
+		d)	dump=$2;;
+		f)	base=$4;;
+		[?])	echo "Wrong argument, please see the help page (-h)" 
+			exit 1;;
+	esac
+done
+
+#}
+
+# Windows operations
+function Windows() {
+	Arbo
+
+	printf "${BLUE}Common volatility commands are performing${NC}\nResulats in ${RED}${PWD}/${base}/audit.txt${NC}.\n"
+	echo "Please wait..."
+
+	OS="$(volatility -f ${dump} imageinfo 2> /dev/null | while read line; do if [[ "$line" =~ "Suggested" ]]; then echo "$line" | awk '{print $4}' | sed -e 's/,//g'; fi; done)"
+	printf "[+] ${GREEN}OS Type${NC} : ${OS}\n" | tee -a ${base}/audit.txt
+
+	# Get the name of the computer
+	name="$(strings ${dump} | grep "^COMPUTERNAME" | head -n 1 | awk '{split($0,a,"="); print a[2]}')"
+	printf "[+] ${GREEN}Computer name${NC} : ${name}\n" | tee -a ${base}/audit.txt
+
+	# Get users hash
+	hashd="$(volatility -f ${dump} --profile="${OS}" hashdump 2> /dev/null)"
+	printf "[+] ${GREEN}Credentials${NC}\n"
+	printf "${hashd}\n" > ${base}/hash.txt
+	while read hashd; 
+	do
+		users=$(echo ${hashd} | cut -f1 -d":")
+		plop=$(echo ${hashd} | sed 's/://g' | grep -o '.\{32\}$' 2> /dev/null)
+		decrypt=$(curl --data "hash=${plop}&decrypt=Décrypter" -s http://md5decrypt.net/Ntlm/ | sed 's/<[^>]*>//g' | grep ${plop} | awk '{print $3}' | rev | cut -c 8- | rev 2> /dev/null)
+		printf "${users} : ${decrypt}\n"
+	done < ${base}/hash.txt
+	printf "\n[+] Complete ${GREEN}hashdump${NC} in ${RED}${base}/hash.txt${NC}\n"
+
+	# Get command
+	cmdsc="$(volatility -f ${dump} --profile="${OS}" cmdscan 2> /dev/null)"
+	printf "\n\nCommand scan : ${cmdscan}\n" >> ${base}/audit.txt
+
+	# Get consoles command
+	conso="$(volatility -f ${dump} --profile="${OS}" consoles 2> /dev/null)"
+	printf "\nConsoles : " >> ${base}/audit.txt
+	echo "${conso}" >> ${base}/audit.txt  # Illegal characters, printf failed
+	printf "[+] Consoles commands recovery ${GREEN}done${NC} !\n"
+
+	# Dump pstree in current_process.txt locate in ${base} directory
+	volatility -f ${dump} --profile="${OS}" pstree 2> /dev/null >> ${base}/current_process.txt
+
+	# Get all process, even hidden ones (not in a tree)
+	volatility -f ${dump} --profile="${OS}" psxview 2> /dev/null >> ${base}/all_process.txt
+
+	# Clipboard paste in audit.txt
+	clip="$(volatility -f ${dump} --profile="${OS}" clipboard 2> /dev/null)"
+	echo "\nClipboard : ${clip}" >> ${base}/audit.txt
+	printf "[+] Clipboard recovery ${GREEN}done${NC} !\n"
+
+	printf "[+] File ${RED}${PWD}/${base}/audit.txt${NC} is ${GREEN}completed${NC}.\n"
+
+	# Get screenshot from the ${dump}
+	mkdir ${base}/screenshot
+	volatility -f ${dump} --profile="${OS}" screenshot -D ${base}/screenshot/ &> /dev/null
+	printf "[+] Screenshot recovery ${GREEN}done${NC} !\n"
+
+	# Do a scan of present files in the ${dump}
+	volatility -f ${dump} --profile="${OS}" filescan > ${base}/present_file.txt 2> /dev/null
+	printf "[+] Filescan ${GREEN}done${NC} !\n"
+
+	# Get history from ${dump}
+	volatility -f ${dump} --profile="${OS}" iehistory > ${base}/iehistory.txt 2> /dev/null
+	printf "[+] Internet history recovery ${GREEN}done${NC} !\n"
+
+	# Get network traffic
+	volatility -f ${dump} --profile="${OS}" netscan > ${base}/netscan.txt 2> /dev/null
+	printf "[+] Network analysis ${GREEN}done${NC} !\n"
+
+	# Looking for encrypted volumes
+	BitlockDetection
+	TruecryptDetection
+
+	#FinalCmds
+}
+
+function BitlockDetection() {
+	# Is bitlocker present ? If yes, see tools associate
+	if [[ $(cat ${base}/all_process.txt | grep -i "fvenotify") ]]; then
+	    printf "[+] Bitlocker ${GREEN}found${NC} !\n"
+	    bdefind=1
+	    echo "Bitlocker is present on the volume" >> ${base}/audit.txt
+	    printf "Is the bitlocker plugin installed on your system ? (https://github.com/elceef/bitlocker) [Y/n] "
+	    read bitlockInstalled
+	    if [[ ${bitlockInstalled} == 'y' || ${bitlockInstalled} == 'Y' ]]; then
+	    	printf "Please enter the absolute path of your volatility plugin folder :\n"
+	    	read plugPath
+	    	volatility --plugins=${plugPath} -f ${dump} --profile="${OS}" bitlocker 2> /dev/null | tee ${base}/bitlocker_infos.txt
+	    	printf "Do you want to mount the encrypted volume ? ${RED}Needs root privileges${NC} [Y/n] "
+	    	read bitlockMount
+	    	if [[ ${bitlockMount} == 'y' || ${bitlockMount} == 'Y' ]]; then
+	    		printf "Please enter the absolute path of the encrypted volume : \n"
+	    		read bitlockVolume
+	    		# Offset calculation
+	    		a1=$(fdisk -l ${bitlockVolume} | tail -n 1 | awk '{print $2}')
+	    		a2=$(fdisk -l ${bitlockVolume} | sed '1d' | head -n 1 | awk '{print $6}')
+	    		bitlockKey=$(volatility --plugins=${plugPath} -f ${dump} --profile="${OS}" bitlocker 2> /dev/null | head -n-1  | tail -n 2 | awk '{print $3}' | tr '\n' ':' | sed 's/.$//g')
+	    		mkdir ${base}/bitlock_tmp 2> /dev/null
+	    		mkdir /mnt/tmp 2> /dev/null
+	    		bdemount -X allow_root -k ${bitlockKey} -o $((${a1}*${a2})) ${bitlockVolume} /mnt/tmp 
+	    		bdefs=$(ls /mnt/tmp | head -n 1)
+	    		mount -o loop,ro /mnt/tmp/${bdefs} ${base}/bitlock_tmp
+	    		tree ${base}/bitlock_tmp
+	    	else
+	    		printf "[-] No bitlocker volume mounted"
+	    	fi
+	    else
+	    	printf "Bitlocker plugin is downloadable here : https://github.com/elceef/bitlocker\nBdemount is present in libbde downloadable here : https://github.com/libyal/libbde\n"
+	    fi
+	fi
+}
+
+function TruecryptDetection() {
+	# Is truecrypt present ? If yes, informations stored in truecrypt_info.txt
+	if [[ $(cat ${base}/all_process.txt | grep -i "truecrypt") ]]; then
+		printf "[+] Truecrypt ${GREEN}found${NC} !\n"
+		touch ${base}/truecrypt_info.txt
+		echo "Truecrypt summary : " >> ${base}/truecrypt_info.txt
+		volatility -f ${dump} --profile="${OS}" truecryptsummary 2> /dev/null >> ${base}/truecrypt_info.txt
+		printf "\nPassphrase : " >> ${base}/truecrypt_info.txt
+		TCPassphrase=$(volatility -f ${dump} --profile="${OS}" truecryptpassphrase 2> /dev/null | awk '{print $NF}')
+		echo ${TCPassphrase} >> ${base}/truecrypt_info.txt
+		printf "${PURPLE}[+] Truecrypt passphrase${NC} : ${TCPassphrase}\n"
+		printf "[+] Complete results are stored in : ${RED}${PWD}/${base}/truecrypt_info.txt${NC}\n"
+		printf "Actually this script cannot find truecrypt volume...\nYou can mount it with those following commands ${RED}as root${NC} :\n"
+		printf "# losetup /dev/loop0 /path/to/truecrypt.file\n# cryptsetup --type tcrypt open /dev/loop0 myContainer\n# mount /dev/mapper/myContainer /mnt/tmp_tc\nMore informations at : http://www.adercon.com/ac/node/114"
+	fi
+}
+
+# Linux operations
+function Linux() {
+	Arbo
+	linvers=$(strings ${dump} | grep -i "Linux version" | uniq)
+	bootimg=$(strings ${dump} | grep -ioE 'BOOT_IMAGE\S+' | uniq)
+	echo $linvers
+	echo ""
+	echo $bootimg
+	echo ""
+	
+	if [[ $(echo $linvers | grep Ubuntu) ]]; then
+		linkern=$(echo $bootimg | cut -c26-)
+		printf "${PURPLE}When the Ubuntu VM is up :\n${NC}"
+		printf "sudo apt-get install linux-image-${linkern} linux-headers-${linkern} volatility-tools\n"
+		printf "${RED}Restart it, press SHIFT and boot on the new Kernel.\n${NC}"
+		echo ""
+		printf "${PURPLE}Please enter the name of the new profile : \n${NC}"
+		read newLinProf
+		printf "cd /usr/src/volatility-tools/linux && make && zip ${newLinProf}.zip /usr/src/volatility-tools/linux/module.dwarf /boot/System.map-${linkern}-generic\n"
+		printf "${PURPLE}Then place the zip file in : /usr/lib/python2.7/site-packages/volatility/plugins/overlays/linux\n${NC}"
+	else
+		echo "Unknown OS"
+	fi
+
+	echo ""
+	printf "${PURPLE}Actual profiles installed : ${NC}"
+	echo ""
+	volatility --info 2>&1 | grep -i 'profile for linux' 
+	echo ""
+	echo "Which profiles are you wanting to use ?"
+	read linProfile
+	#echo $linProfile # Debug
+	if [[ $(volatility -f ${dump} --profile=${linProfile} linux_banner 2>&1 | grep 'Linux version') ]]; then
+		printf "${GREEN}[+] Good profile"
+
+		if [[ $(strings ${dump} | grep -i "type=\"crypto_LUKS\"") ]]; then
+			printf ", crypto_LUKS find ! Trying to get the Master Key...${NC}\n"
+			./aeskeyfind ${dump} > ${base}/key.bin
+			printf "[+] Master Key stored in ${CYAN}key.bin${NC} !\n"
+			printf "${PURPLE}Would you like to mount a volume ? [Y/n]\n${NC}"
+			read input
+			if [[ $input == "Y" || $input == "y" ]]; then
+			        echo "Enter the volume path : "
+			        read volLin
+			        mkdir ${base}/lin_vol 2>&1
+			        cryptsetup --master-key-file key.bin luksOpen ${volLin} vol_lin
+			        mount /dev/mapper/vol_lin ${base}/lin_vol 
+			        chown ${USER}:users -R ${base}/lin_vol 
+			        printf "${GREEN}[+] Volume successfully mounted${NC}"
+			else
+			        echo "false"
+			fi
+		else
+			printf "\n${RED}[-] No LUKS type found in the dump${NC}"
+		fi
+
+		linBanner=$(volatility -f ${dump} --profile=${linProfile} linux_banner 2>&1)
+		echo $linBanner > ${base}/audit.txt
+
+
+	else
+		printf "${RED}Bad profile.. Try again :(${NC}"
+		exit
+	fi
+
+	FinalCmds
+}
+
+function Arbo() {
+	# Make the ${base} directory and audit.txt into ${base}
+	mkdir ${base} 2> /dev/null
+	touch ${base}/audit.txt
+}
+
+function FinalCmds() {
+	# Do a foremost to recover some hidden files
+	# printf "\n\n${CYAN}Foremost in progress..${NC}\n"
+	# mkdir ${base}/foremost
+	# foremost -i ${dump} -o ${base}/foremost >> /dev/null
+
+	if [[ ${bdefind} ]]; then
+		printf "Don't forget to unmout your bitlocker volume ;-)\numount /mnt/tmp/\numount -l ${base}/bitlock_tmp"
+	fi
+}
+
+if [[ $# != 4 ]]; then
+	printf "${RED}Use -h argument for help${NC}"
+elif [[ $(strings ${dump} | grep -i "Linux version") ]]; then
+	Linux
+else
+	Windows
+fi

@@ -1,2 +1,1 @@
-# Auto_vol
-This script will runs basics volatility commands.
+# NOT FINISHED YET, DOCUMENTATION COMES SOON ! :)
