@@ -15,14 +15,19 @@ GRAY='\033[1;37m'
 
 # Argument management
 #function Usage() {
-usage="$(basename "$0") [-h] [-d <dump_name>] [-f <folder_name>] -- Script that performs basic volatility command and stores them into a directory
+usage="$(basename "$0") [-h] [-d <dump_name>] [-f <folder_name>] [-p <vol_plugin_path>] [-a <volume_path>] -- Script that performs basic volatility command and stores them into a directory
 
 where:
 	-h	Show this help
 	-d 	Name of the memory dump to analyze
 	-f	Name of the folder
+	-p  Volatility plugins path
+	-a 	Volume path [OPTIONAL] - If no volume is needed juste put something.
 
-Examples : ./auto_vol -d /home/maki/memory.raw -f /home/maki/tests"
+Examples : 
+
+./auto_vol -d /home/maki/memory.raw -f /home/maki/tests -p /home/maki/zTools/plug_vol -a noVolumeNeeded
+./auto_vol -d /home/maki/memory.raw -f /home/maki/tests -p /home/maki/zTools/plug_vol -a /home/maki/image.dd"
 
 while getopts "hd:f" optionName; do
 	case "$optionName" in
@@ -30,6 +35,8 @@ while getopts "hd:f" optionName; do
 			exit ;;
 		d)	dump=$2;;
 		f)	base=$4;;
+		p)  plug=$6;;
+		a)	disc=$8;;
 		[?])	echo "Wrong argument, please see the help page (-h)" 
 			exit 1;;
 	esac
@@ -53,16 +60,20 @@ function Windows() {
 
 	# Get users hash
 	hashd="$(volatility -f ${dump} --profile="${OS}" hashdump 2> /dev/null)"
-	printf "[+] ${GREEN}Credentials${NC}\n"
-	printf "${hashd}\n" > ${base}/hash.txt
-	while read hashd; 
-	do
-		users=$(echo ${hashd} | cut -f1 -d":")
-		plop=$(echo ${hashd} | sed 's/://g' | grep -o '.\{32\}$' 2> /dev/null)
-		decrypt=$(curl --data "hash=${plop}&decrypt=Décrypter" -s http://md5decrypt.net/Ntlm/ | sed 's/<[^>]*>//g' | grep ${plop} | awk '{print $3}' | rev | cut -c 8- | rev 2> /dev/null)
-		printf "${users} : ${decrypt}\n"
-	done < ${base}/hash.txt
-	printf "\n[+] Complete ${GREEN}hashdump${NC} in ${RED}${base}/hash.txt${NC}\n"
+	if [[ $? != 0 ]]; then
+		printf "[-] ${RED}No users${NC} hash found.\n"
+	else
+		printf "[+] ${GREEN}Credentials${NC}\n"
+		printf "${hashd}\n" > ${base}/hash.txt
+		while read hashd; 
+		do
+			users=$(echo ${hashd} | cut -f1 -d":")
+			plop=$(echo ${hashd} | sed 's/://g' | grep -o '.\{32\}$' 2> /dev/null)
+			decrypt=$(curl --data "hash=${plop}&decrypt=Décrypter" -s http://md5decrypt.net/Ntlm/ | sed 's/<[^>]*>//g' | grep ${plop} | awk '{print $3}' | rev | cut -c 8- | rev 2> /dev/null)
+			printf "${users} : ${decrypt}\n"
+		done < ${base}/hash.txt
+		printf "\n[+] Complete ${GREEN}hashdump${NC} in ${RED}${base}/hash.txt${NC}\n"
+	fi
 
 	# Get command
 	cmdsc="$(volatility -f ${dump} --profile="${OS}" cmdscan 2> /dev/null)"
@@ -105,7 +116,8 @@ function Windows() {
 	printf "[+] Network analysis ${GREEN}done${NC} !\n"
 
 	# Looking for encrypted volumes
-	BitlockDetection
+	# $1 = First parameter of the Windows function, plugin_path
+	BitlockDetection $1 $2
 	TruecryptDetection
 
 	#FinalCmds
@@ -117,33 +129,16 @@ function BitlockDetection() {
 	    printf "[+] Bitlocker ${GREEN}found${NC} !\n"
 	    bdefind=1
 	    echo "Bitlocker is present on the volume" >> ${base}/audit.txt
-	    printf "Is the bitlocker plugin installed on your system ? (https://github.com/elceef/bitlocker) [Y/n] "
-	    read bitlockInstalled
-	    if [[ ${bitlockInstalled} == 'y' || ${bitlockInstalled} == 'Y' ]]; then
-	    	printf "Please enter the absolute path of your volatility plugin folder :\n"
-	    	read plugPath
-	    	volatility --plugins=${plugPath} -f ${dump} --profile="${OS}" bitlocker 2> /dev/null | tee ${base}/bitlocker_infos.txt
-	    	printf "Do you want to mount the encrypted volume ? ${RED}Needs root privileges${NC} [Y/n] "
-	    	read bitlockMount
-	    	if [[ ${bitlockMount} == 'y' || ${bitlockMount} == 'Y' ]]; then
-	    		printf "Please enter the absolute path of the encrypted volume : \n"
-	    		read bitlockVolume
-	    		# Offset calculation
-	    		a1=$(fdisk -l ${bitlockVolume} | tail -n 1 | awk '{print $2}')
-	    		a2=$(fdisk -l ${bitlockVolume} | sed '1d' | head -n 1 | awk '{print $6}')
-	    		bitlockKey=$(volatility --plugins=${plugPath} -f ${dump} --profile="${OS}" bitlocker 2> /dev/null | head -n-1  | tail -n 2 | awk '{print $3}' | tr '\n' ':' | sed 's/.$//g')
-	    		mkdir ${base}/bitlock_tmp 2> /dev/null
-	    		mkdir /mnt/tmp 2> /dev/null
-	    		bdemount -X allow_root -k ${bitlockKey} -o $((${a1}*${a2})) ${bitlockVolume} /mnt/tmp 
-	    		bdefs=$(ls /mnt/tmp | head -n 1)
-	    		mount -o loop,ro /mnt/tmp/${bdefs} ${base}/bitlock_tmp
-	    		tree ${base}/bitlock_tmp
-	    	else
-	    		printf "[-] No bitlocker volume mounted"
-	    	fi
-	    else
-	    	printf "Bitlocker plugin is downloadable here : https://github.com/elceef/bitlocker\nBdemount is present in libbde downloadable here : https://github.com/libyal/libbde\n"
-	    fi
+	    volatility --plugins="$1" -f ${dump} --profile="${OS}" bitlocker 2> /dev/null | tee ${base}/bitlocker_infos.txt
+    	a1=$(fdisk -l "$2" | tail -n 1 | awk '{print $2}')
+    	a2=$(fdisk -l "$2" | sed '1d' | head -n 1 | awk '{print $6}')
+    	bitlockKey=$(volatility --plugins="$1" -f ${dump} --profile="${OS}" bitlocker 2> /dev/null | head -n-1  | tail -n 2 | awk '{print $3}' | tr '\n' ':' | sed 's/.$//g')
+    	mkdir ${base}/bitlock_tmp 2> /dev/null
+    	mkdir /mnt/tmp 2> /dev/null
+    	bdemount -X allow_root -k ${bitlockKey} -o $((${a1}*${a2})) "$2" /mnt/tmp 
+    	bdefs=$(ls /mnt/tmp | head -n 1)
+    	mount -o loop,ro /mnt/tmp/${bdefs} ${base}/bitlock_tmp
+    	tree ${base}/bitlock_tmp
 	fi
 }
 
@@ -249,10 +244,12 @@ function FinalCmds() {
 	fi
 }
 
-if [[ $# != 4 ]]; then
+
+if [[ $# == 0 ]]; then
 	printf "${RED}Use -h argument for help${NC}"
 elif [[ $(strings ${dump} | grep -i "Linux version") ]]; then
 	Linux
 else
-	Windows
+	# Sixth parameter, the plugin path
+	Windows "$6" "$8"
 fi
