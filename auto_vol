@@ -22,11 +22,11 @@ where:
 	-d 	Name of the memory dump to analyze
 	-f	Name of the folder
 	-p  Volatility plugins path
-	-a 	Volume path [OPTIONAL] - If no volume is needed juste put something.
+	-a 	Volume path (if a volume has to be mount)
 
 Examples : 
 
-./auto_vol -d /home/maki/memory.raw -f /home/maki/tests -p /home/maki/zTools/plug_vol -a noVolumeNeeded
+./auto_vol -d /home/maki/memory.raw -f /home/maki/tests -p /home/maki/zTools/plug_vol
 ./auto_vol -d /home/maki/memory.raw -f /home/maki/tests -p /home/maki/zTools/plug_vol -a /home/maki/image.dd"
 
 while getopts "hd:f" optionName; do
@@ -120,7 +120,7 @@ function Windows() {
 	BitlockDetection $1 $2
 	TruecryptDetection
 
-	#FinalCmds
+	FinalCmds
 }
 
 function BitlockDetection() {
