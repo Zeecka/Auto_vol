@@ -25,8 +25,7 @@ This script will create an output folder and store every result. It can also det
 This script will need :
 
 * Bitlocker plugin : https://github.com/elceef/bitlocker
-1. Libbde : https://github.com/libyal/libbde
-For Arch user, install the libbde-git
+* Libbde : https://github.com/libyal/libbde
 * Findaes : https://sourceforge.net/projects/findaes/?SetFreedomCookie
 * Foremost : http://foremost.sourceforge.net/
 
