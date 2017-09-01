@@ -74,6 +74,122 @@ For Arch user, install the libbde-git
 
 ![](https://img11.hostingpics.net/pics/33553321tc.png)
 
+For this feature, I just used the truecrypt plugins suite :
+
+* truecryptsummary
+* truecryptpassphrase
+
+To detect if there is a Truecrypt container open during the dump, the script just grep the _all_process.txt_ file with "Truecrypt" to find the process.
+
+```bash
+if [[ $(cat ${base}/all_process.txt | grep -i "truecrypt") ]]; then
+```
+Line 147 - TruecryptDetection function.
+
 ### Bitlocker
 
 ![](https://img11.hostingpics.net/pics/201051bitlocker.png)
+
+This script follows those steps :
+
+* Is bitlocker process present ?
+* Find keys (FVEK & TWEAK)
+* Parse keys 
+* Auto mount (if disc dump is available)
+
+#### Is bitlocker process present ?
+
+Such as truecrypt, the script will just grep _all_process.txt_. Bitlocker process (fvenotify) is hidden, this is the main difference for detecting Truecrypt or Bitlocker.
+This is why I do a **pstree** and a **psxview**, I let you check the command reference of Volatility for more informations.
+
+```bash
+if [[ $(cat ${base}/all_process.txt | grep -i "fvenotify") ]]; then
+```
+Line 128 - BitlockerDetection function
+
+#### Find keys and parse them
+
+To find keys, I'm simply use the bitlocker plugin (link above in Prerequisite section).
+
+The standard output of this plugin is :
+
+```bash
+Volatility Foundation Volatility Framework 2.6
+
+Address : 0xfa80018be720
+Cipher  : AES-128
+FVEK    : e7e576581fe26aa7c71a7e711c778da2
+TWEAK   : b72f4e075edb7e734dfb08638cf29652
+```
+
+But I need this output to mount the encrypted volume :
+
+> FVEK:TWEAK
+
+I made a little one liner in bash to do the job :
+
+```bash
+volatility --plugin=<plugin_path> -f <mem_dump_path> --profile=<profile> bitlocker 2> /dev/null | head -n-1  | tail -n 2 | awk '{print $3}' | tr '\n' ':' | sed 's/.$//g'
+```
+Line 135 - BitlockerDetection function
+
+* 2> /dev/null : To hide the stderr of volatility (to remove the Volatility Foundation Volatility Framework 2.6 on top of each volatility output).
+* head -n-1 : Remove the last empty line.
+* tail -n 2 : Remove first three lines (empty one, Address and Cipher).
+* awk '{print $3}' : Keep only FVEK and TWEAK values.
+* tr '\n' ':' : Put FVEK and TWEAK on the same line and seperate with semicolon.
+* sed 's/.$//g' : Remove last ':'.
+ 
+#### Auto mount
+
+To mount bitlocker (BDE) volume, Linux users, you have to install **libbde**, link above in Prerequisite section.
+
+/!\ Arch Linux users, use the libbde-git ! /!\
+```bash
+$ yaourt -S libbde-git
+```
+
+The bdemount binary works well with this syntax :
+
+```bash
+# bdemount -X allow_root -k <FVEK:TWEAK> -o <disc_offset> <bde_volume> <mounting_point> && chown ${USER}:${USER} -R <mounting_point> && chmod 655 -R <mouting_point>
+```
+
+* -X allow_root : In the mounting point we will have the bde volume decrypted, but we have to mount with "mount" command as a standard filesystem and we need **fdisk -l** for the offset, so this script needs to be start with root permissions.
+* -k <FVEK:TWEAK> : You can understand why we parsed keys before ;)
+* chown and chmod : To allow you current user to deal with mounting folder.
+
+For the offset, we need to use **fdisk -l** command on our encrypt file. Below the standard output :
+
+```bash
+Disque <encrypted_volume_path> : 75 MiB, 78643200 octets, 153600 secteurs
+Unités : secteur de 1 × 512 = 512 octets
+Taille de secteur (logique / physique) : 512 octets / 512 octets
+taille d'E/S (minimale / optimale) : 512 octets / 512 octets
+Type d'étiquette de disque : dos
+Identifiant de disque : 0x0a152bd9
+
+Périphérique                                      Amorçage Début    Fin Secteurs Taille Id Type
+<encrypted_volume_path>1            128 147583   147456    72M  7 HPFS/NTFS/ex
+```
+
+We just need to do this operation : <volume_start>*<sector_size>
+
+Bash parsing :
+
+```bash
+a1=$(fdisk -l "$2" | tail -n 1 | awk '{print $2}')
+a2=$(fdisk -l "$2" | sed '1d' | head -n 1 | awk '{print $6}')
+```
+BitlockerDetection function
+
+Now we have everything to mount decrypt the volume.
+Finally the decrypted volume is recognized as a regular filesystem (file command), so we just have to mount it.
+
+```bash
+mount -o loop,ro <path_to_decypted_volume> <folder_mount>
+```
+
+The script executes the **tree** command when the final fs is mounted (see the pictures above).
+
+### To do
