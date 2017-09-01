@@ -1,6 +1,6 @@
 # Auto_vol - Automated basics volatility tasks
 
-## Usages
+## Usage
 
 ```bash
 ./auto_vol [-h] [-d <dump_name>] [-f <folder_name>] [-p <vol_plugin_path>] [-a <volume_path>] -- Script that performs basic volatility command and stores them into a directory
@@ -18,9 +18,9 @@ Examples :
 ./auto_vol -d /home/maki/memory.raw -f /home/maki/tests -p /home/maki/zTools/plug_vol -a /home/maki/image.dd
 ```
 
-This script will create an output folder and stored every results. It can also detect if it's a Windows or Linux dump.
+This script will create an output folder and store every result. It can also detect if it's a Windows or Linux dump.
 
-## Prerequistes
+## Prerequisites
 
 This script will need :
 
@@ -55,7 +55,7 @@ For Arch user, install the libbde-git
 
 ### Features 
 
-* Find windows profil _(audit.txt)_
+* Find windows profiles _(audit.txt)_
 * Find computer name _(audit.txt)_
 * Find user hash and try to crack it with online database _(hash.txt)_
 * cmdscan _(audit.txt)_
@@ -69,6 +69,54 @@ For Arch user, install the libbde-git
 * netscan _(netscan.txt)_
 * Bitlocker detection and encrypted volume mounting
 * Truecrypt detection and key recovery
+
+### Hash cracking
+
+I use the hashdump plugin of volatility, here is the standard output :
+
+```bash
+Volatility Foundation Volatility Framework 2.6
+Administrator:500:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+Guest:501:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
+HomeGroupUser$:1001:aad3b435b51404eeaad3b435b51404ee:57e82f46aff390080f143c09ab2c5b68:::
+info:1002:aad3b435b51404eeaad3b435b51404ee:dc3817f29d2199446639538113064277:::
+```
+
+We just need usernames and hash to crack.
+
+#### Username extraction
+
+```bash
+volatility -f <memdump_path> --profile=<profile> hashdump 2> /dev/null | cut -f1 -d":"
+```
+
+* 2> /dev/null : Redirect the volatility stderr to /dev/null (just te delete the "Volatility Foundation Volatility Framework 2.6" on each volatility execution).
+* cut -f1 -d":" : Remove everything after the first semicolon.
+
+#### Hashs extraction
+
+```bash
+volatility -f <memdump_path> --profile=<profile> hashdump 2> /dev/null | sed 's/://g' | grep -o '.\{32\}$'
+```
+
+* 2> /dev/null : Redirect the volatility stderr to /dev/null (just te delete the "Volatility Foundation Volatility Framework 2.6" on each volatility execution).
+* sed 's/://g' : Remove semicolon. 
+* grep -o '.\{32\}$' : Keep only last 32 chars. LM hash to crack is always 32 chars.
+
+#### Hash "cracking"
+
+```bash
+curl --data "hash=${plop}&decrypt=Décrypter" -s http://md5decrypt.net/Ntlm/ | sed 's/<[^>]*>//g' | grep <hash_extracted> | awk '{print $3}' | sed 's/.\{6\}$//g'
+```
+Line 72 - Windows function
+
+* curl command : I let you check the man for more informations.
+* sed 's/<[^>]*>//g' : The script remove all html tags.
+* grep <hash_extracted> : The script grep the line with the hash and the crack.
+* awk '{print $3}' : Keep only the third column, it contains the hash cracked.
+* sed 's/.\{6\}$//g' : Remove last 8 chars, md5decrypt.net add the word "Trouvé" when a hash is find in the database.
+
+Then we just print the username with the associate password.
 
 ### Truecrypt
 

