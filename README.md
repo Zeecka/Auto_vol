@@ -241,3 +241,5 @@ mount -o loop,ro <path_to_decypted_volume> <folder_mount>
 The script executes the **tree** command when the final fs is mounted (see the pictures above).
 
 ### To do
+
+* Linux part
