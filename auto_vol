@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ## Author :	Maki
-## Contact : alan.marrec@protonmail.comn
+## Contact : alan.marrec@protonmail.com
 
 # Colors management
 NC='\033[0m' # No color

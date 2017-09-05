@@ -247,11 +247,51 @@ The script executes the **tree** command when the final fs is mounted (see the p
 * vagrant
 * vagrant-scp (vagrant plugin)
 
-### Vagrant box commands
+### LinuxProfileGenerator script
 
-* install new kernel
-* restart
+```bash
+LinuxProfileGenerator.sh [-h] <kernel_version>
+This script must be run as root user !
 
+where:
+	-h 	Help page
+
+Examples : 
+
+./LinuxProfileGenerator.sh 4.4.0-93-lowlatency
+```
+
+This script will check is the current installed kernel is the same as expected for the volatility profile. 
+
+#### If kernel are different
+
+The script install the wanted kernel (ex : 4.4.0-93-lowlatency) and remove the old one.
+After that, this script will overwrite the **rc.local** file.
+
+```bash
+echo "$location $1" > /etc/rc.local
+echo "exit 0" >> /etc/rc.local
+```
+Line 50/51 - Generator function
+
+* $location : Contains the output of locate command (cf. Line 45)
+* $1 : First argument of Generator function, then the wanted kernel version
+
+After that, the script will restart the virtual machine.
+
+#### If kernel are same
+
+This script will go at this path : **/usr/src/volatility-tools/linux** to generate profile.
+
+On old Ubuntu version I noticed that the **module.c** is outdated, then I remove it and download the new one :
+
+```bash
+rm module.c
+wget https://raw.githubusercontent.com/volatilityfoundation/volatility/master/tools/linux/module.c	
+```
+Line 58 / 60 - Generator function
+
+Then the script follows the volatility profile creation procedure : https://github.com/volatilityfoundation/volatility/wiki/Linux
 
 ### To do
 

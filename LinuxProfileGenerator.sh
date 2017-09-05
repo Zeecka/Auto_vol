@@ -1,5 +1,8 @@
 #!/bin/bash
 
+## Author : Maki
+## Contact : alan.marrec@protonmail.com
+
 usage="$(basename "$0") [-h] <kernel_version>
 This script must be run as root user !
 
@@ -47,8 +50,6 @@ function Generator() {
 		# /home/vagrant/LinuxProfileGenerator.sh 4.4.0-93-lowlatency
 		# exit 0;
 		# Where 4.4.0-93-lowlatency is first argument of the first execution of this script
-		echo "$location $1" > /etc/rc.local
-		echo "exit 0" >> /etc/rc.local
 		echo "[!] Reboot in 5 seconds..."
 		sleep 5
 		reboot
