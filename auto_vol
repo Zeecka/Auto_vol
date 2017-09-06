@@ -178,9 +178,11 @@ function Linux() {
 	mkdir ${base}/Vagrant_dir
 	cd ${base}/Vagrant_dir
 
-	vagrant init "${vagBoxType}" | grep "Successfully added"
+	vagrant init "${vagBoxType}" &> /dev/null
+	echo "[+] Vagrant box successfully added !"
 	vagrant up &> /dev/null
-	echo "[+] Waiting for SSH connection..."
+	echo "[+] Vagrant box up !"
+	echo "[!] Waiting for SSH connection..."
 	sleep 15
 	vagrant ssh -c "cd . && wget https://raw.githubusercontent.com/AlanMarrec/Auto_vol/master/LinuxProfileGenerator.sh && chmod +x LinuxProfileGenerator.sh && sudo ./LinuxProfileGenerator.sh ${kernel_version}"
 	# sleep 30
