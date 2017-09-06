@@ -41,9 +41,9 @@ function Generator() {
 		# Easier way to find the script for adding at boot
 		updatedb
 		echo "[-] Kernel different than expected for the Linux profile."
-		apt install -y linux-headers-"$1" linux-image-"$1" volatility-tools zip git &> /dev/null
+		apt install -y linux-headers-"$1" linux-image-"$1" volatility-tools zip git 
 		echo "[+] New Kernel installed, removing old kernel version..."
-		apt purge -y linux-headers-$(uname -r) linux-image-$(uname -r) &> /dev/null
+		apt purge -y linux-headers-$(uname -r) linux-image-$(uname -r) 
 		echo "[+] Add this script at boot..."
 		location=$(locate $(basename $0))
 		# rc.local file overwriting for :
@@ -52,6 +52,9 @@ function Generator() {
 		# Where 4.4.0-93-lowlatency is first argument of the first execution of this script
 		echo "$location $1" > /etc/rc.local
 		echo "exit 0" >> /etc/rc.local
+		cat /etc/rc.local
+		echo "[+] rc.local service enabling..."
+		systemctl enable rc-local.service
 		echo "[!] Reboot in 5 seconds..."
 		sleep 5
 		reboot

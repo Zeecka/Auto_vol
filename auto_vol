@@ -48,9 +48,6 @@ done
 function Windows() {
 	Arbo
 
-	printf "${BLUE}Common volatility commands are performing${NC}\nResulats in ${RED}${PWD}/${base}/audit.txt${NC}.\n"
-	echo "Please wait..."
-
 	OS="$(volatility -f ${dump} imageinfo 2> /dev/null | while read line; do if [[ "$line" =~ "Suggested" ]]; then echo "$line" | awk '{print $4}' | sed -e 's/,//g'; fi; done)"
 	printf "[+] ${GREEN}OS Type${NC} : ${OS}\n" | tee -a ${base}/audit.txt
 
@@ -162,67 +159,75 @@ function TruecryptDetection() {
 # Linux operations
 function Linux() {
 	Arbo
+
+	printf "[+] Raw data about Linux version :\n"
 	linvers=$(strings ${dump} | grep -i "Linux version" | uniq)
 	bootimg=$(strings ${dump} | grep -ioE 'BOOT_IMAGE\S+' | uniq)
-	echo $linvers
-	echo ""
-	echo $bootimg
-	echo ""
-	
-	if [[ $(echo $linvers | grep Ubuntu) ]]; then
-		linkern=$(echo $bootimg | cut -c26-)
-		printf "${PURPLE}When the Ubuntu VM is up :\n${NC}"
-		printf "sudo apt-get install linux-image-${linkern} linux-headers-${linkern} volatility-tools\n"
-		printf "${RED}Restart it, press SHIFT and boot on the new Kernel.\n${NC}"
-		echo ""
-		printf "${PURPLE}Please enter the name of the new profile : \n${NC}"
-		read newLinProf
-		printf "cd /usr/src/volatility-tools/linux && make && zip ${newLinProf}.zip /usr/src/volatility-tools/linux/module.dwarf /boot/System.map-${linkern}-generic\n"
-		printf "${PURPLE}Then place the zip file in : /usr/lib/python2.7/site-packages/volatility/plugins/overlays/linux\n${NC}"
-	else
-		echo "Unknown OS"
+	printf "${linvers} \n$bootimg \n\n"
+
+	# Is Ubuntu ?
+	if [[ $(echo ${linvers} | grep -i ubuntu) ]]; then
+		kernel_version=$(echo ${linvers} | awk '{print $3}')
+		ubuntu_ver=$(echo ${linvers} | awk '{print $10}' | sed -n -e 's/^.*~//p' | sed -e 's/.\{3\}$//g')
+		vagBoxType=$(./BoxNameParser.py $(echo ${ubuntu_ver}))
 	fi
 
-	echo ""
-	printf "${PURPLE}Actual profiles installed : ${NC}"
-	echo ""
-	volatility --info 2>&1 | grep -i 'profile for linux' 
-	echo ""
-	echo "Which profiles are you wanting to use ?"
-	read linProfile
-	#echo $linProfile # Debug
-	if [[ $(volatility -f ${dump} --profile=${linProfile} linux_banner 2>&1 | grep 'Linux version') ]]; then
-		printf "${GREEN}[+] Good profile"
+	printf "[!] Kernel version : ${kernel_version} \n" | tee -a ${base}/audit.txt
+	printf "[!] Linux type : ${ubuntu_ver} \n\n" | tee -a ${base}/audit.txt
 
-		if [[ $(strings ${dump} | grep -i "type=\"crypto_LUKS\"") ]]; then
-			printf ", crypto_LUKS find ! Trying to get the Master Key...${NC}\n"
-			./aeskeyfind ${dump} > ${base}/key.bin
-			printf "[+] Master Key stored in ${CYAN}key.bin${NC} !\n"
-			printf "${PURPLE}Would you like to mount a volume ? [Y/n]\n${NC}"
-			read input
-			if [[ $input == "Y" || $input == "y" ]]; then
-			        echo "Enter the volume path : "
-			        read volLin
-			        mkdir ${base}/lin_vol 2>&1
-			        cryptsetup --master-key-file key.bin luksOpen ${volLin} vol_lin
-			        mount /dev/mapper/vol_lin ${base}/lin_vol 
-			        chown ${USER}:users -R ${base}/lin_vol 
-			        printf "${GREEN}[+] Volume successfully mounted${NC}"
-			else
-			        echo "false"
-			fi
-		else
-			printf "\n${RED}[-] No LUKS type found in the dump${NC}"
-		fi
+	mkdir ${base}/Vagrant_dir
+	cd ${base}/Vagrant_dir
 
-		linBanner=$(volatility -f ${dump} --profile=${linProfile} linux_banner 2>&1)
-		echo $linBanner > ${base}/audit.txt
+	vagrant init "${vagBoxType}" | grep "Successfully added"
+	vagrant up &> /dev/null
+	echo "[+] Waiting for SSH connection..."
+	sleep 15
+	vagrant ssh -c "cd . && wget https://raw.githubusercontent.com/AlanMarrec/Auto_vol/master/LinuxProfileGenerator.sh && chmod +x LinuxProfileGenerator.sh && sudo ./LinuxProfileGenerator.sh ${kernel_version}"
+	# sleep 30
+	# vagrant scp default:/profile/Linux_"$kernel_version"_version.zip .
+	# mv Linux_"$kernel_version"_version.zip /usr/lib/python2.7/site-packages/volatility/plugins/overlays/linux/
+	# vagrant destroy
+
+	# echo ""
+	# printf "${PURPLE}Actual profiles installed : ${NC}"
+	# echo ""
+	# volatility --info 2>&1 | grep -i 'profile for linux' 
+	# echo ""
+	# echo "Which profiles are you wanting to use ?"
+	# read linProfile
+	# #echo $linProfile # Debug
+	# if [[ $(volatility -f ${dump} --profile=${linProfile} linux_banner 2>&1 | grep 'Linux version') ]]; then
+	# 	printf "${GREEN}[+] Good profile"
+
+	# 	if [[ $(strings ${dump} | grep -i "type=\"crypto_LUKS\"") ]]; then
+	# 		printf ", crypto_LUKS find ! Trying to get the Master Key...${NC}\n"
+	# 		./aeskeyfind ${dump} > ${base}/key.bin
+	# 		printf "[+] Master Key stored in ${CYAN}key.bin${NC} !\n"
+	# 		printf "${PURPLE}Would you like to mount a volume ? [Y/n]\n${NC}"
+	# 		read input
+	# 		if [[ $input == "Y" || $input == "y" ]]; then
+	# 		        echo "Enter the volume path : "
+	# 		        read volLin
+	# 		        mkdir ${base}/lin_vol 2>&1
+	# 		        cryptsetup --master-key-file key.bin luksOpen ${volLin} vol_lin
+	# 		        mount /dev/mapper/vol_lin ${base}/lin_vol 
+	# 		        chown ${USER}:users -R ${base}/lin_vol 
+	# 		        printf "${GREEN}[+] Volume successfully mounted${NC}"
+	# 		else
+	# 		        echo "false"
+	# 		fi
+	# 	else
+	# 		printf "\n${RED}[-] No LUKS type found in the dump${NC}"
+	# 	fi
+
+	# 	linBanner=$(volatility -f ${dump} --profile=${linProfile} linux_banner 2>&1)
+	# 	echo $linBanner > ${base}/audit.txt
 
 
-	else
-		printf "${RED}Bad profile.. Try again :(${NC}"
-		exit
-	fi
+	# else
+	# 	printf "${RED}Bad profile.. Try again :(${NC}"
+	# 	exit
+	# fi
 
 	FinalCmds
 }
@@ -231,6 +236,9 @@ function Arbo() {
 	# Make the ${base} directory and audit.txt into ${base}
 	mkdir ${base} 2> /dev/null
 	touch ${base}/audit.txt
+
+	printf "${BLUE}Common volatility commands are performing${NC}\nResulats in ${RED}${PWD}/${base}/audit.txt${NC}.\n"
+	echo "Please wait..."
 }
 
 function FinalCmds() {
