@@ -160,10 +160,10 @@ function TruecryptDetection() {
 function Linux() {
 	Arbo
 
-	printf "[+] Raw data about Linux version :\n"
-	linvers=$(strings ${dump} | grep -i "Linux version" | uniq)
-	bootimg=$(strings ${dump} | grep -ioE 'BOOT_IMAGE\S+' | uniq)
-	printf "${linvers} \n$bootimg \n\n"
+	printf "[+] Raw data about Linux version :\n" > ${base}/audit.txt
+	linvers=$(strings ${dump} | grep -i "Linux version" | uniq) 
+	bootimg=$(strings ${dump} | grep -ioE 'BOOT_IMAGE\S+' | uniq) 
+	printf "${linvers} \n$bootimg \n\n" >> ${base}/audit.txt
 
 	# Is Ubuntu ?
 	if [[ $(echo ${linvers} | grep -i ubuntu) ]]; then
@@ -173,22 +173,54 @@ function Linux() {
 	fi
 
 	printf "[!] Kernel version : ${kernel_version} \n" | tee -a ${base}/audit.txt
-	printf "[!] Linux type : ${ubuntu_ver} \n\n" | tee -a ${base}/audit.txt
+	printf "[!] Linux type : ${ubuntu_ver} \n" | tee -a ${base}/audit.txt
+	printf "[!] Vagrant box : ${vagBoxType} \n\n" | tee -a ${base}/audit.txt
 
 	mkdir ${base}/Vagrant_dir
 	cd ${base}/Vagrant_dir
 
 	vagrant init "${vagBoxType}" &> /dev/null
-	echo "[+] Vagrant box successfully added !"
+	printf "[+] Vagrant box ${GREEN}successfully added${NC} !\n"
+
 	vagrant up &> /dev/null
-	echo "[+] Vagrant box up !"
-	echo "[!] Waiting for SSH connection..."
-	sleep 15
-	vagrant ssh -c "cd . && wget https://raw.githubusercontent.com/AlanMarrec/Auto_vol/master/LinuxProfileGenerator.sh && chmod +x LinuxProfileGenerator.sh && sudo ./LinuxProfileGenerator.sh ${kernel_version}"
-	# sleep 30
-	# vagrant scp default:/profile/Linux_"$kernel_version"_version.zip .
-	# mv Linux_"$kernel_version"_version.zip /usr/lib/python2.7/site-packages/volatility/plugins/overlays/linux/
-	# vagrant destroy
+	printf "[+] Vagrant box ${GREEN}up${NC} !\n"
+	printf "[!] ${LRED}Waiting for SSH connection...${NC}\n"
+	sleep 20
+	
+	vagrant ssh -c "sudo mkdir /profile && sudo chmod -R 777 /profile" &> /dev/null
+	echo "[+] /profile folder created."
+	
+	vagrant scp ../../LinuxProfileGenerator.sh default:~ &> /dev/null
+	printf "[+] ${GREEN}LinuxProfileGenerator.sh script${NC} copied in ${RED}user home${NC}\n"
+	
+	vagrant ssh -c "chmod +x ~/LinuxProfileGenerator.sh && sudo ~/LinuxProfileGenerator.sh ${kernel_version}"
+	echo "[*] Kernel updated."
+	sleep 25
+	vagrant ssh -c "sudo ~/LinuxProfileGenerator.sh ${kernel_version}"
+	printf "[+] Profil ${GREEN}created${NC}.\n"
+
+	profPath=$(locate volatility/plugins/overlays/linux | head -n 1)
+	newProfile=$(vagrant ssh -c "ls /profile") 2> /dev/null
+	vagrant scp default:/profile/\* .  2> /dev/null
+	printf "[+] ${GREEN}Profile imported${NC} from vagrant box !\n"
+
+	# Vagrant scp is adding a char -> \r to the filename
+	newProfile=$(echo $newProfile | sed 's/.\{1\}$//g')
+	mv $newProfile ${profPath}
+	printf "[+] ${GREEN}Profile paste${NC} in your : ${RED}${profPath}${NC}\n"
+
+	vagrant destroy -f &> /dev/null
+	printf "[+] Vagrant box ${GREEN}successfully destroyed${NC} !\n"
+
+	# Back to the main directory
+	cd ../..
+
+	# Profile name parsing
+	finalProfil=$(volatility --info | grep "$(echo $newProfile| sed -e 's/.\{4\}$//g')" | awk '{print $1}' 2> /dev/null)
+	printf "\n\n[!] Linux banner : \n" | tee -a ${base}/audit.txt
+	volatility -f ${dump} --profile=${finalProfil} linux_banner 2> /dev/null | tee -a ${base}/audit.txt
+
+	# volatility --info | grep Linux 
 
 	# echo ""
 	# printf "${PURPLE}Actual profiles installed : ${NC}"

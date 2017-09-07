@@ -3,6 +3,16 @@
 ## Author : Maki
 ## Contact : alan.marrec@protonmail.com
 
+# Colors management
+NC='\033[0m' # No color
+RED='\033[0;31m'
+LRED='\033[1;31m'
+GREEN='\033[0;32m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+BLUE='\033[1;34m'
+GRAY='\033[1;37m'
+
 usage="$(basename "$0") [-h] <kernel_version>
 This script must be run as root user !
 
@@ -32,44 +42,34 @@ function Generator() {
 
 	mkdir /profile &> /dev/null
 
-	echo "Welcome to the volatility profile generator ! :)"
-	echo "I'll by your guide."
-
-	echo "[+] Checking kernel version..."
+	printf "[*] ${PURPLE}Checking kernel${NC} version...\n"
 
 	if [[ $(uname -r) != "$1" ]]; then
 		# Easier way to find the script for adding at boot
 		updatedb
-		echo "[-] Kernel different than expected for the Linux profile."
-		apt install -y linux-headers-"$1" linux-image-"$1" volatility-tools zip git 
-		echo "[+] New Kernel installed, removing old kernel version..."
-		apt purge -y linux-headers-$(uname -r) linux-image-$(uname -r) 
-		echo "[+] Add this script at boot..."
-		location=$(locate $(basename $0))
-		# rc.local file overwriting for :
-		# /home/vagrant/LinuxProfileGenerator.sh 4.4.0-93-lowlatency
-		# exit 0;
-		# Where 4.4.0-93-lowlatency is first argument of the first execution of this script
-		echo "$location $1" > /etc/rc.local
-		echo "exit 0" >> /etc/rc.local
-		cat /etc/rc.local
-		echo "[+] rc.local service enabling..."
-		systemctl enable rc-local.service
-		echo "[!] Reboot in 5 seconds..."
-		sleep 5
+		printf "[-] ${LRED}Kernel different than expected for the Linux profile.${NC}\n"
+		apt install -y linux-headers-"$1" linux-image-"$1" volatility-tools zip make gcc &> /dev/null
+		printf "[+] New Kernel ${GREEN}installed${NC}, ${PURPLE}removing${NC} old kernel version...\n"
+		apt purge -y linux-headers-$(uname -r) linux-image-$(uname -r) &> /dev/null
+		printf "[!] ${LRED}Reboot in 2 seconds...${NC}\n"
+		sleep 2
 		reboot
 	else
-		echo "[+] Kernel are similar ! Profil creation in progress..."
+		printf "[+] ${GREEN}Kernel are similar !${NC} Profil creation in progress...\n"
 		cd /usr/src/volatility-tools/linux
 		# Volatility profile creation
 		# Default module.c is outdated for old kernel
 		rm module.c
 		# Up-to-date one
-		wget https://raw.githubusercontent.com/volatilityfoundation/volatility/master/tools/linux/module.c
-		make -C /lib/modules/$1/build CONFIG_DEBUG_INFO=y M=$PWD modules
-		dwarfdump -di ./module.o > module.dwarf
-		zip Linux_"$1"_version.zip module.dwarf /boot/System.map-"$1"
-		mv Linux_"$1"_version.zip /profile/
+		wget https://raw.githubusercontent.com/volatilityfoundation/volatility/master/tools/linux/module.c &> /dev/null
+		printf "[+] ${GREEN}New module.c${NC} downloaded.\n"
+		make -C /lib/modules/$1/build CONFIG_DEBUG_INFO=y M=$PWD modules &> /dev/null
+		printf "[+] Module output ${GREEN}generated${NC}.\n"
+		dwarfdump -di ./module.o > module.dwarf 
+		printf "[+] ${PURPLE}module.dwarf${NC} has been ${GREEN}successfully generated${NC}.\n"
+		linuxType=$(lsb_release -a | grep -i "distributor" | awk '{print $3}')
+		zip "$linuxType"_"$1"_version.zip module.dwarf /boot/System.map-"$1"
+		mv "$linuxType"_"$1"_version.zip /profile/
 	fi
 }
 
