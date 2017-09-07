@@ -220,6 +220,66 @@ function Linux() {
 	printf "\n\n[!] Linux banner : \n" | tee -a ${base}/audit.txt
 	volatility -f ${dump} --profile=${finalProfil} linux_banner 2> /dev/null | tee -a ${base}/audit.txt
 
+	volatility -f ${dump} --profile=${finalProfil} linux_pslist > ${base}/linux_pslist 2> /dev/null
+	printf "[+] Process list ${GREEN}dump${NC} in ${RED}${base}/linux_pslist${NC}\n"
+
+	volatility -f ${dump} --profile=${finalProfil} linux_psaux > ${base}/linux_pslist 2> /dev/null
+	printf "[+] ${ps aux} command results ${GREEN}dump${NC} in ${RED}${base}/linux_psaux${NC}\n"
+
+	volatility -f ${dump} --profile=${finalProfil} linux_pstree > ${base}/linux_pstree 2> /dev/null
+	printf "[+] Process list tree is ${GREEN}dump${NC} in ${RED}${base}/linux_pstree${NC}\n"
+
+	volatility -f ${dump} --profile=${finalProfil} linux_psxview > ${base}/linux_psxview 2> /dev/null
+	printf "[+] Complete process list ${GREEN}dump${NC} in ${RED}${base}/linux_psxview${NC}\n"
+
+	volatility -f ${dump} --profile=${finalProfil} linux_lsof > ${base}/linux_lsof 2> /dev/null
+	printf "[+] List of opened file ${GREEN}dump${NC} in ${RED}${base}/linux_lsof${NC}\n"
+
+	printf "\nCommand history : \n" >> ${base}/audit.txt
+	volatility -f ${dump} --profile=${finalProfil} linux_bash >> ${base}/audit.txt 2> /dev/null
+	printf "[+] Command history ${GREEN}dump${NC} in ${RED}${base}/audit.txt${NC}\n"
+
+	volatility -f ${dump} --profile=${finalProfil} linux_lsmod > ${base}/linux_lsmod
+	printf "[+] Kernel module list ${GREEN}dump${NC} in ${RED}${base}/linux_lsmod${NC}\n"
+
+	printf "\nChecking TTY : \n" >> ${base}/audit.txt
+	volatility -f ${dump} --profile=${finalProfil} linux_check_tty >> ${base}/audit.txt
+	printf "[+] Check for every opened TTY ${GREEN}dump${NC} in ${RED}${base}/audit.txt${NC}\n"
+
+	mkdir ${base}/network
+
+	volatility -f ${dump} --profile=${finalProfil} linux_arp > ${base}/network/linux_arp
+	printf "[+] ARP table ${GREEN}dump${NC} in ${RED}${base}/network/linux_arp${NC}\n"
+
+	volatility -f ${dump} --profile=${finalProfil} linux_ifconfig > ${base}/network/linux_ifconfig
+	printf "[+] ${PURPLE}ifconfig${NC} output ${GREEN}dump${NC} in ${RED}${base}/network/linux_ifconfig${NC}\n"
+
+	mkdir ${base}/hardware
+
+	printf "\nCPU Info : "
+	volatility -f ${dump} --profile=${finalProfil} linux_cpuinfo >> ${base}/audit.txt
+	printf "[+] CPU info ${GREEN}dump${NC} in ${RED}${base}/audit.txt${NC}\n"
+
+	volatility -f ${dump} --profile=${finalProfil} linux_dmesg > ${base}/hardware/linux_dmesg
+	printf "[+] ${PURPLE}dmesg${NC} output ${GREEN}dump${NC} in ${RED}${base}/hardware/linux_dmesg${NC}\n"
+
+	volatility -f ${dump} --profile=${finalProfil} linux_mount > ${base}/linux_mount
+	printf "[+] List mounted volume ${GREEN}dump${NC} in ${RED}${base}/linux_mount${NC}\n"
+
+
+
+
+
+
+
+	
+
+	
+	
+
+	
+
+
 	# volatility --info | grep Linux 
 
 	# echo ""
@@ -266,6 +326,35 @@ function Linux() {
 	FinalCmds
 }
 
+function Requirement() {
+	printf "Check for required packages.\n"
+	commands_req=( "volatility" "bdemount (libbde-git)" "curl" "vagrant" "foremost" )
+	for i in "${commands_req[@]}"; do
+		printf "$i... "
+		if [[ $(command -v $i) ]]; then
+			printf "${GREEN}installed${NC}\n"
+		else
+			printf "${RED}not installed${NC}\n"
+			flag_exit="1"
+		fi	
+	done
+
+	if [[ $(vagrant plugin list | grep "scp" | awk '{print $1}') ]]; then
+		printf "vagrant-scp... ${GREEN}installed${NC}\n"
+	else
+		printf "vagrant-scp... ${RED}not installed${NC}\n"
+		printf "Run as ${LRED}root${NC} : vagrant plugin install vagrant-scp\n"
+	fi
+
+	if [[ $(locate bitlocker.py | head -n 1) ]]; then
+		printf "bitlocker plugin... ${GREEN}installed${NC}\n"
+	else
+		printf "bitlocker plugin... ${RED}not installed${NC}\n"
+		printf "Run as ${LRED}root${NC} : vagrant plugin install vagrant-scp\n"
+	fi
+
+}
+
 function Arbo() {
 	# Make the ${base} directory and audit.txt into ${base}
 	mkdir ${base} 2> /dev/null
@@ -286,7 +375,7 @@ function FinalCmds() {
 	fi
 }
 
-
+Requirement
 if [[ $# == 0 ]]; then
 	printf "${RED}Use -h argument for help${NC}"
 elif [[ $(strings ${dump} | grep -i "Linux version") ]]; then

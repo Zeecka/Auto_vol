@@ -68,8 +68,9 @@ function Generator() {
 		dwarfdump -di ./module.o > module.dwarf 
 		printf "[+] ${PURPLE}module.dwarf${NC} has been ${GREEN}successfully generated${NC}.\n"
 		linuxType=$(lsb_release -a | grep -i "distributor" | awk '{print $3}')
-		zip "$linuxType"_"$1"_version.zip module.dwarf /boot/System.map-"$1"
+		zip "$linuxType"_"$1"_version.zip module.dwarf /boot/System.map-"$1" &> /dev/null
 		mv "$linuxType"_"$1"_version.zip /profile/
+		printf "[+] ${GREEN}Profile created${NC} and ${GREEN}moved${NC} to the ${PURPLE}/profile folder${NC}.\n"
 	fi
 }
 
