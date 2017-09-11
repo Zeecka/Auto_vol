@@ -27,7 +27,7 @@ This script will need :
 
 * Bitlocker plugin : https://github.com/elceef/bitlocker
 * Libbde : https://github.com/libyal/libbde
-* Findaes : https://sourceforge.net/projects/findaes/?SetFreedomCookie
+* Aeskeyfind : https://github.com/eugenekolo/sec-tools/tree/master/crypto/aeskeyfind/aeskeyfind
 * Foremost : http://foremost.sourceforge.net/
 * Curl
 * Vagrant + vagrant-scp plugin
