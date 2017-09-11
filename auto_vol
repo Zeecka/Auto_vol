@@ -275,7 +275,7 @@ function Luks() {
 
 	cryptsetup --master-key-file key.bin luksOpen --cipher=${luks_cipher} --hash=${luks_hash} $1 luks_volume
 	printf "[+] ${GREEN}Luks volume${NC} decrypted.\n"
-	mount /dev/mapper/luks_volume luks_volume 
+	mount -o loop,ro /dev/mapper/luks_volume luks_volume 
 	printf "[+] Luks volume ${GREEN}mounted${NC} !\n"
 	tree luks_volume
 	cd ../
@@ -287,7 +287,7 @@ function FinalCmds() {
 	mkdir ${base}/foremost
 	foremost -i ${dump} -o ${base}/foremost >> /dev/null
 
-	chmod -R 777 ${base}
+	chmod -R 655 ${base}
 	chown -R ${USER}:${USER} ${base}
 
 	printf "[+] Done."
