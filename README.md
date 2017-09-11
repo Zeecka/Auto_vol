@@ -3,12 +3,12 @@
 ## Usage
 
 ```bash
-./auto_vol [-h] [-d <dump_name>] [-f <folder_name>] [-p <vol_plugin_path>] [-a <volume_path>] -- Script that performs basic volatility command and stores them into a directory
+./auto_vol [-h] [-d <dump_name>] [-f <results_folder>] [-p <vol_plugin_path>] [-a <volume_path>] -- Script that performs basic volatility command and stores them into a directory
 
 where:
 	-h	Show this help
 	-d 	Name of the memory dump to analyze
-	-f	Name of the folder
+	-f	Results folder name
 	-p  Volatility plugins path
 	-a 	Volume path (if a volume has to be mount)
 
