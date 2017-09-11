@@ -29,6 +29,11 @@ This script will need :
 * Libbde : https://github.com/libyal/libbde
 * Findaes : https://sourceforge.net/projects/findaes/?SetFreedomCookie
 * Foremost : http://foremost.sourceforge.net/
+* Curl
+* Vagrant + vagrant-scp plugin
+* Foremost
+* Aeskeyfind
+* Tree
 
 
 ## Windows
