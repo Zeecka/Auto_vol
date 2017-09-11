@@ -54,18 +54,18 @@ This script will need :
 
 ### Features 
 
-* Find windows profiles _(audit.txt)_
-* Find computer name _(audit.txt)_
+* Find windows profiles
+* Find computer name 
 * Find user hash and try to crack it with online database _(hash.txt)_
-* cmdscan _(audit.txt)_
-* consoles _(audit.txt)_
-* pstree _(current_process.txt)_
-* psxview _(all_process.txt)_
-* clipboard _(audit.txt)_
-* screenshot _(screenshot folder)_
-* filescan _(present_file.txt)_
-* iehistory _(iehistory.txt)_
-* netscan _(netscan.txt)_
+* cmdscan
+* consoles
+* pstree 
+* psxview 
+* clipboard 
+* screenshot
+* filescan
+* iehistory 
+* netscan 
 * Bitlocker detection and encrypted volume mounting
 * Truecrypt detection and key recovery
 
@@ -239,13 +239,23 @@ mount -o loop,ro <path_to_decypted_volume> <folder_mount>
 
 The script executes the **tree** command when the final fs is mounted (see the pictures above).
 
-## Linux - IN PROGRESS
+## Linux 
 
 ### Prerequisite
 
 * Virtualbox
 * vagrant
 * vagrant-scp (vagrant plugin)
+* libbde-git (for bdemount binary)
+* curl
+* foremost
+* aeskeyfind (This package : https://github.com/eugenekolo/sec-tools/tree/master/crypto/aeskeyfind/aeskeyfind)
+* tree
+
+Auto_vol will check for dependancies at boot : 
+
+![](https://img11.hostingpics.net/pics/883028linrequir.png)
+
 
 ### LinuxProfileGenerator script
 
@@ -262,22 +272,21 @@ Examples :
 ```
 
 This script will check is the current installed kernel is the same as expected for the volatility profile. 
+If the wanted profile already exist in your **volatility/plugins/overlays/linux** path, then auto_vol will use the existing profile instead of create one.
 
 #### If kernel are different
 
 The script install the wanted kernel (ex : 4.4.0-93-lowlatency) and remove the old one.
-After that, this script will overwrite the **rc.local** file.
+Auto_vol main script will just call this script twice (before and after kernel modification).
 
 ```bash
-echo "$location $1" > /etc/rc.local
-echo "exit 0" >> /etc/rc.local
+vagrant ssh -c "chmod +x ~/LinuxProfileGenerator.sh && sudo ~/LinuxProfileGenerator.sh ${kernel_version}"
+echo "[*] Kernel updated."
+sleep 25
+vagrant ssh -c "sudo ~/LinuxProfileGenerator.sh ${kernel_version}"
+printf "[+] Profil ${GREEN}created${NC}.\n"
 ```
-Line 50/51 - Generator function
-
-* $location : Contains the output of locate command (cf. Line 45)
-* $1 : First argument of Generator function, then the wanted kernel version
-
-After that, the script will restart the virtual machine.
+Line 176 - 180 ; Auto_vol script
 
 #### If kernel are same
 
@@ -293,6 +302,35 @@ Line 58 / 60 - Generator function
 
 Then the script follows the volatility profile creation procedure : https://github.com/volatilityfoundation/volatility/wiki/Linux
 
-### To do
+![](https://img11.hostingpics.net/pics/532635linprof.png)
 
-* Linux part
+### Features
+
+* linux_pslist
+* linux_psaux
+* linux_pstree
+* linux_psxview
+* linux_lsof
+* linux_bash
+* linux_lsmod
+* linux_check_tty
+* linux_arp
+* linux_ifconfig
+* linux_cpuinfo
+* linux_dmesg
+* linux_mount
+
+![](https://img11.hostingpics.net/pics/308111lincmd.png)
+
+### LUKS automount
+
+Cipher used has to be AES-128 or AES-256,  because I'm using **aeskeyfind**.
+
+![](https://img11.hostingpics.net/pics/607693lindecip.png)
+
+#### If not Ubuntu
+
+If the memory dump is not an Ubuntu memory dump, but if you have a disc dump ciphered, you don't need to create a volatility profile. 
+Auti_vol will automount the disc dump and display hint to create the right profile as shown below :
+
+![](https://img11.hostingpics.net/pics/958738lindebian.png)

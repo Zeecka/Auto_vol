@@ -264,15 +264,15 @@ function TruecryptDetection() {
 
 function Luks() {
 	printf "[*] Trying to find AES key...\n"
+	cd ${base}
 
-	aeskeyfind $2 | tac | tr -d '\n' | xxd -r -p > ${base}/key.bin
+	aeskeyfind $2 | tac | tr -d '\n' | xxd -r -p > key.bin
 	printf "[+] ${PURPLE}key.bin${NC} file written.\n"
 
-	mkdir ${base}/luks_volume
+	mkdir luks_volume
 	luks_hash=$(file $1 | awk '{print $9}' | sed 's/.\{1\}$//g')
 	luks_cipher=$(file $1 | awk '{print $7 $8}' | sed -e 's/,/-/g' -e 's/^.//g' -e 's/.\{1\}$//g')
 
-	cd ${base}
 	cryptsetup --master-key-file key.bin luksOpen --cipher=${luks_cipher} --hash=${luks_hash} $1 luks_volume
 	printf "[+] ${GREEN}Luks volume${NC} decrypted.\n"
 	mount /dev/mapper/luks_volume luks_volume 
