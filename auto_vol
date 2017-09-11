@@ -26,8 +26,9 @@ where:
 
 Examples : 
 
-./auto_vol -d /home/maki/memory.raw -f /home/maki/tests -p /home/maki/zTools/plug_vol
-./auto_vol -d /home/maki/memory.raw -f /home/maki/tests -p /home/maki/zTools/plug_vol -a /home/maki/image.dd"
+./auto_vol -d dump -f truecrypt_encrypted
+./auto_vol -d memory.raw -f bitlocker_encrypted -p /home/maki/zTools/plug_vol -a image.dd 
+./auto_vol -d memory.raw -f luks_encrypted -p /home/maki/zTools/plug_vol/ -a forensic.img"
 
 while getopts "hd:f" optionName; do
 	case "$optionName" in
@@ -42,7 +43,51 @@ while getopts "hd:f" optionName; do
 	esac
 done
 
-#}
+########################################################################################################
+####									       PRESCAN  										    ####
+########################################################################################################
+
+function Requirement() {
+	printf "Check for required packages.\n"
+	commands_req=( "volatility" "bdemount (libbde-git)" "curl" "vagrant" "foremost" "aeskeyfind" "tree" )
+	for i in "${commands_req[@]}"; do
+		printf "$i... "
+		if [[ $(command -v $i) ]]; then
+			printf "${GREEN}installed${NC}\n"
+		else
+			printf "${RED}not installed${NC}\n"
+			flag_exit="1"
+		fi	
+	done
+
+	if [[ $(vagrant plugin list | grep "scp" | awk '{print $1}') ]]; then
+		printf "vagrant-scp... ${GREEN}installed${NC}\n"
+	else
+		printf "vagrant-scp... ${RED}not installed${NC}\n"
+		printf "Run as ${LRED}root${NC} : vagrant plugin install vagrant-scp\n"
+		flag_exit="1"
+	fi
+
+	if [[ $(locate bitlocker.py | head -n 1) ]]; then
+		printf "bitlocker plugin... ${GREEN}installed${NC}\n"
+	else
+		printf "bitlocker plugin... ${RED}not installed${NC}\n"
+		flag_exit="1"
+	fi
+}
+
+function Arbo() {
+	# Make the ${base} directory and audit.txt into ${base}
+	mkdir ${base} 2> /dev/null
+	touch ${base}/audit.txt
+
+	printf "${BLUE}Common volatility commands are performing${NC}\nResulats in ${RED}${PWD}/${base}/audit.txt${NC}.\n"
+	echo "Please wait..."
+}
+
+########################################################################################################
+####									  OS MANAGEMENT 										    ####
+########################################################################################################
 
 # Windows operations
 function Windows() {
@@ -72,45 +117,12 @@ function Windows() {
 		printf "\n[+] Complete ${GREEN}hashdump${NC} in ${RED}${base}/hash.txt${NC}\n"
 	fi
 
-	# Get command
-	cmdsc="$(volatility -f ${dump} --profile="${OS}" cmdscan 2> /dev/null)"
-	printf "\n\nCommand scan : ${cmdscan}\n" >> ${base}/audit.txt
-
-	# Get consoles command
-	conso="$(volatility -f ${dump} --profile="${OS}" consoles 2> /dev/null)"
-	printf "\nConsoles : " >> ${base}/audit.txt
-	echo "${conso}" >> ${base}/audit.txt  # Illegal characters, printf failed
-	printf "[+] Consoles commands recovery ${GREEN}done${NC} !\n"
-
-	# Dump pstree in current_process.txt locate in ${base} directory
-	volatility -f ${dump} --profile="${OS}" pstree 2> /dev/null >> ${base}/current_process.txt
-
-	# Get all process, even hidden ones (not in a tree)
-	volatility -f ${dump} --profile="${OS}" psxview 2> /dev/null >> ${base}/all_process.txt
-
-	# Clipboard paste in audit.txt
-	clip="$(volatility -f ${dump} --profile="${OS}" clipboard 2> /dev/null)"
-	echo "\nClipboard : ${clip}" >> ${base}/audit.txt
-	printf "[+] Clipboard recovery ${GREEN}done${NC} !\n"
-
-	printf "[+] File ${RED}${PWD}/${base}/audit.txt${NC} is ${GREEN}completed${NC}.\n"
-
-	# Get screenshot from the ${dump}
-	mkdir ${base}/screenshot
-	volatility -f ${dump} --profile="${OS}" screenshot -D ${base}/screenshot/ &> /dev/null
-	printf "[+] Screenshot recovery ${GREEN}done${NC} !\n"
-
-	# Do a scan of present files in the ${dump}
-	volatility -f ${dump} --profile="${OS}" filescan > ${base}/present_file.txt 2> /dev/null
-	printf "[+] Filescan ${GREEN}done${NC} !\n"
-
-	# Get history from ${dump}
-	volatility -f ${dump} --profile="${OS}" iehistory > ${base}/iehistory.txt 2> /dev/null
-	printf "[+] Internet history recovery ${GREEN}done${NC} !\n"
-
-	# Get network traffic
-	volatility -f ${dump} --profile="${OS}" netscan > ${base}/netscan.txt 2> /dev/null
-	printf "[+] Network analysis ${GREEN}done${NC} !\n"
+	mkdir ${base}/cmd_windows
+	vol_commands_win=( "pstree" "cmdscan" "consoles" "psxview" "clipboard" "filescan" "iehistory" "netscan" )
+	for i in "${vol_commands_win[@]}"; do
+		volatility -f ${dump} --profile=${OS} $i > ${base}/cmd_windows/$i 2> /dev/null
+		printf "[+] $i ${GREEN}dump${NC} in ${RED}${base}/cmd_windows/$i${NC}\n"
+	done
 
 	# Looking for encrypted volumes
 	# $1 = First parameter of the Windows function, plugin_path
@@ -120,11 +132,105 @@ function Windows() {
 	FinalCmds
 }
 
+# Linux operations
+function Linux() {
+	Arbo
+
+	printf "[+] Raw data about Linux version :\n" > ${base}/audit.txt
+	linvers=$(strings ${dump} | grep -i "Linux version" | uniq) 
+	bootimg=$(strings ${dump} | grep -ioE 'BOOT_IMAGE\S+' | uniq) 
+	printf "${linvers} \n$bootimg \n" >> ${base}/audit.txt
+
+	# Is Ubuntu ?
+	if [[ $(echo ${linvers} | grep -i ubuntu) ]]; then
+		kernel_version=$(echo ${linvers} | awk '{print $3}')
+		ubuntu_ver=$(echo ${linvers} | awk '{print $10}' | sed -n -e 's/^.*~//p' | sed -e 's/.\{3\}$//g')
+		vagBoxType=$(./BoxNameParser.py $(echo ${ubuntu_ver}))
+
+		printf "[!] Kernel version : ${kernel_version} \n" | tee -a ${base}/audit.txt
+		printf "[!] Linux type : ${ubuntu_ver} \n" | tee -a ${base}/audit.txt
+		printf "[!] Vagrant box : ${vagBoxType} \n\n" | tee -a ${base}/audit.txt
+
+		# Is the profil already exist ?
+		if [[ $(volatility --info | grep -i "ubuntu_${kernel_version}_version" | awk '{print $1}' 2> /dev/null) ]]; then
+			printf "[+] ${GREEN}Volatility profile found${NC} !\n"
+			finalProfil=$(volatility --info | grep -i "ubuntu_${kernel_version}_version" | awk '{print $1}' 2> /dev/null)
+		else
+			mkdir ${base}/Vagrant_dir
+			cd ${base}/Vagrant_dir
+
+			vagrant init "${vagBoxType}" &> /dev/null
+			printf "[+] Vagrant box ${GREEN}successfully added${NC} !\n"
+
+			vagrant up &> /dev/null
+			printf "[+] Vagrant box ${GREEN}up${NC} !\n"
+			printf "[!] ${LRED}Waiting for SSH connection...${NC}\n"
+			sleep 20
+			
+			vagrant ssh -c "sudo mkdir /profile && sudo chmod -R 777 /profile" &> /dev/null
+			echo "[+] /profile folder created."
+			
+			vagrant scp ../../LinuxProfileGenerator.sh default:~ &> /dev/null
+			printf "[+] ${GREEN}LinuxProfileGenerator.sh script${NC} copied in ${RED}user home${NC}\n"
+			
+			vagrant ssh -c "chmod +x ~/LinuxProfileGenerator.sh && sudo ~/LinuxProfileGenerator.sh ${kernel_version}"
+			echo "[*] Kernel updated."
+			sleep 25
+			vagrant ssh -c "sudo ~/LinuxProfileGenerator.sh ${kernel_version}"
+			printf "[+] Profil ${GREEN}created${NC}.\n"
+
+			profPath=$(locate volatility/plugins/overlays/linux | head -n 1)
+			newProfile=$(vagrant ssh -c "ls /profile") 2> /dev/null
+			vagrant scp default:/profile/\* .  2> /dev/null
+			printf "[+] ${GREEN}Profile imported${NC} from vagrant box !\n"
+
+			# Vagrant scp is adding a char -> \r to the filename
+			newProfile=$(echo $newProfile | sed 's/.\{1\}$//g')
+			mv $newProfile ${profPath}
+			printf "[+] ${GREEN}Profile paste${NC} in your : ${RED}${profPath}${NC}\n"
+
+			vagrant destroy -f &> /dev/null
+			printf "[+] Vagrant box ${GREEN}successfully destroyed${NC} !\n"
+
+			# Back to the main directory
+			cd ../..
+
+			finalProfil=$(volatility --info | grep "$(echo $newProfile| sed -e 's/.\{4\}$//g')" | awk '{print $1}' 2> /dev/null)
+
+		fi
+
+		printf "\n\n[!] Linux banner : \n" | tee -a ${base}/audit.txt
+		volatility -f ${dump} --profile=${finalProfil} linux_banner 2> /dev/null | tee -a ${base}/audit.txt
+
+		mkdir ${base}/cmd_linux
+		vol_commands_lin=( "linux_pslist" "linux_psaux" "linux_pstree" "linux_psxview" "linux_lsof" "linux_bash" "linux_lsmod" "linux_check_tty" "linux_arp" "linux_ifconfig" "linux_cpuinfo" "linux_dmesg" "linux_mount" )
+		for i in "${vol_commands_lin[@]}"; do
+			volatility -f ${dump} --profile=${finalProfil} $i > ${base}/cmd_linux/$i 2> /dev/null
+			printf "[+] $i ${GREEN}dump${NC} in ${RED}${base}/cmd_linux/$i${NC}\n"
+		done
+	else
+		printf "[!] ${LRED}Not Ubuntu memory dump !${NC}\n"
+		strings ${dump} | grep -i "Linux version" | uniq
+		strings ${dump} | grep -ioE 'BOOT_IMAGE\S+' | uniq
+		notUbuntu="1"
+	fi
+
+	if [[ $(cat ${base}/cmd_linux/linux_lsmod | grep -i "dm_crypt") || $notUbuntu -eq 1 ]]; then
+		printf "[!] ${PURPLE}dm_crypt${NC} kernel module detected !\n"
+		Luks $2 ${dump}
+	fi
+
+	FinalCmds
+}
+
+########################################################################################################
+####									CIPHER MANAGEMENT 										    ####
+########################################################################################################
+
 function BitlockDetection() {
 	# Is bitlocker present ? If yes, see tools associate
-	if [[ $(cat ${base}/all_process.txt | grep -i "fvenotify") ]]; then
+	if [[ $(cat ${base}/cmd_windows/psxview | grep -i "fvenotify") ]]; then
 	    printf "[+] Bitlocker ${GREEN}found${NC} !\n"
-	    bdefind=1
 	    echo "Bitlocker is present on the volume" >> ${base}/audit.txt
 	    volatility --plugins="$1" -f ${dump} --profile="${OS}" bitlocker 2> /dev/null | tee ${base}/bitlocker_infos.txt
     	a1=$(fdisk -l "$2" | tail -n 1 | awk '{print $2}')
@@ -141,7 +247,7 @@ function BitlockDetection() {
 
 function TruecryptDetection() {
 	# Is truecrypt present ? If yes, informations stored in truecrypt_info.txt
-	if [[ $(cat ${base}/all_process.txt | grep -i "truecrypt") ]]; then
+	if [[ $(cat ${base}/cmd_windows/psxview | grep -i "truecrypt") ]]; then
 		printf "[+] Truecrypt ${GREEN}found${NC} !\n"
 		touch ${base}/truecrypt_info.txt
 		echo "Truecrypt summary : " >> ${base}/truecrypt_info.txt
@@ -156,231 +262,48 @@ function TruecryptDetection() {
 	fi
 }
 
-# Linux operations
-function Linux() {
-	Arbo
+function Luks() {
+	printf "[*] Trying to find AES key...\n"
 
-	printf "[+] Raw data about Linux version :\n" > ${base}/audit.txt
-	linvers=$(strings ${dump} | grep -i "Linux version" | uniq) 
-	bootimg=$(strings ${dump} | grep -ioE 'BOOT_IMAGE\S+' | uniq) 
-	printf "${linvers} \n$bootimg \n\n" >> ${base}/audit.txt
+	aeskeyfind $2 | tac | tr -d '\n' | xxd -r -p > ${base}/key.bin
+	printf "[+] ${PURPLE}key.bin${NC} file written.\n"
 
-	# Is Ubuntu ?
-	if [[ $(echo ${linvers} | grep -i ubuntu) ]]; then
-		kernel_version=$(echo ${linvers} | awk '{print $3}')
-		ubuntu_ver=$(echo ${linvers} | awk '{print $10}' | sed -n -e 's/^.*~//p' | sed -e 's/.\{3\}$//g')
-		vagBoxType=$(./BoxNameParser.py $(echo ${ubuntu_ver}))
-	fi
+	mkdir ${base}/luks_volume
+	luks_hash=$(file $1 | awk '{print $9}' | sed 's/.\{1\}$//g')
+	luks_cipher=$(file $1 | awk '{print $7 $8}' | sed -e 's/,/-/g' -e 's/^.//g' -e 's/.\{1\}$//g')
 
-	printf "[!] Kernel version : ${kernel_version} \n" | tee -a ${base}/audit.txt
-	printf "[!] Linux type : ${ubuntu_ver} \n" | tee -a ${base}/audit.txt
-	printf "[!] Vagrant box : ${vagBoxType} \n\n" | tee -a ${base}/audit.txt
-
-	mkdir ${base}/Vagrant_dir
-	cd ${base}/Vagrant_dir
-
-	vagrant init "${vagBoxType}" &> /dev/null
-	printf "[+] Vagrant box ${GREEN}successfully added${NC} !\n"
-
-	vagrant up &> /dev/null
-	printf "[+] Vagrant box ${GREEN}up${NC} !\n"
-	printf "[!] ${LRED}Waiting for SSH connection...${NC}\n"
-	sleep 20
-	
-	vagrant ssh -c "sudo mkdir /profile && sudo chmod -R 777 /profile" &> /dev/null
-	echo "[+] /profile folder created."
-	
-	vagrant scp ../../LinuxProfileGenerator.sh default:~ &> /dev/null
-	printf "[+] ${GREEN}LinuxProfileGenerator.sh script${NC} copied in ${RED}user home${NC}\n"
-	
-	vagrant ssh -c "chmod +x ~/LinuxProfileGenerator.sh && sudo ~/LinuxProfileGenerator.sh ${kernel_version}"
-	echo "[*] Kernel updated."
-	sleep 25
-	vagrant ssh -c "sudo ~/LinuxProfileGenerator.sh ${kernel_version}"
-	printf "[+] Profil ${GREEN}created${NC}.\n"
-
-	profPath=$(locate volatility/plugins/overlays/linux | head -n 1)
-	newProfile=$(vagrant ssh -c "ls /profile") 2> /dev/null
-	vagrant scp default:/profile/\* .  2> /dev/null
-	printf "[+] ${GREEN}Profile imported${NC} from vagrant box !\n"
-
-	# Vagrant scp is adding a char -> \r to the filename
-	newProfile=$(echo $newProfile | sed 's/.\{1\}$//g')
-	mv $newProfile ${profPath}
-	printf "[+] ${GREEN}Profile paste${NC} in your : ${RED}${profPath}${NC}\n"
-
-	vagrant destroy -f &> /dev/null
-	printf "[+] Vagrant box ${GREEN}successfully destroyed${NC} !\n"
-
-	# Back to the main directory
-	cd ../..
-
-	# Profile name parsing
-	finalProfil=$(volatility --info | grep "$(echo $newProfile| sed -e 's/.\{4\}$//g')" | awk '{print $1}' 2> /dev/null)
-	printf "\n\n[!] Linux banner : \n" | tee -a ${base}/audit.txt
-	volatility -f ${dump} --profile=${finalProfil} linux_banner 2> /dev/null | tee -a ${base}/audit.txt
-
-	volatility -f ${dump} --profile=${finalProfil} linux_pslist > ${base}/linux_pslist 2> /dev/null
-	printf "[+] Process list ${GREEN}dump${NC} in ${RED}${base}/linux_pslist${NC}\n"
-
-	volatility -f ${dump} --profile=${finalProfil} linux_psaux > ${base}/linux_pslist 2> /dev/null
-	printf "[+] ${ps aux} command results ${GREEN}dump${NC} in ${RED}${base}/linux_psaux${NC}\n"
-
-	volatility -f ${dump} --profile=${finalProfil} linux_pstree > ${base}/linux_pstree 2> /dev/null
-	printf "[+] Process list tree is ${GREEN}dump${NC} in ${RED}${base}/linux_pstree${NC}\n"
-
-	volatility -f ${dump} --profile=${finalProfil} linux_psxview > ${base}/linux_psxview 2> /dev/null
-	printf "[+] Complete process list ${GREEN}dump${NC} in ${RED}${base}/linux_psxview${NC}\n"
-
-	volatility -f ${dump} --profile=${finalProfil} linux_lsof > ${base}/linux_lsof 2> /dev/null
-	printf "[+] List of opened file ${GREEN}dump${NC} in ${RED}${base}/linux_lsof${NC}\n"
-
-	printf "\nCommand history : \n" >> ${base}/audit.txt
-	volatility -f ${dump} --profile=${finalProfil} linux_bash >> ${base}/audit.txt 2> /dev/null
-	printf "[+] Command history ${GREEN}dump${NC} in ${RED}${base}/audit.txt${NC}\n"
-
-	volatility -f ${dump} --profile=${finalProfil} linux_lsmod > ${base}/linux_lsmod
-	printf "[+] Kernel module list ${GREEN}dump${NC} in ${RED}${base}/linux_lsmod${NC}\n"
-
-	printf "\nChecking TTY : \n" >> ${base}/audit.txt
-	volatility -f ${dump} --profile=${finalProfil} linux_check_tty >> ${base}/audit.txt
-	printf "[+] Check for every opened TTY ${GREEN}dump${NC} in ${RED}${base}/audit.txt${NC}\n"
-
-	mkdir ${base}/network
-
-	volatility -f ${dump} --profile=${finalProfil} linux_arp > ${base}/network/linux_arp
-	printf "[+] ARP table ${GREEN}dump${NC} in ${RED}${base}/network/linux_arp${NC}\n"
-
-	volatility -f ${dump} --profile=${finalProfil} linux_ifconfig > ${base}/network/linux_ifconfig
-	printf "[+] ${PURPLE}ifconfig${NC} output ${GREEN}dump${NC} in ${RED}${base}/network/linux_ifconfig${NC}\n"
-
-	mkdir ${base}/hardware
-
-	printf "\nCPU Info : "
-	volatility -f ${dump} --profile=${finalProfil} linux_cpuinfo >> ${base}/audit.txt
-	printf "[+] CPU info ${GREEN}dump${NC} in ${RED}${base}/audit.txt${NC}\n"
-
-	volatility -f ${dump} --profile=${finalProfil} linux_dmesg > ${base}/hardware/linux_dmesg
-	printf "[+] ${PURPLE}dmesg${NC} output ${GREEN}dump${NC} in ${RED}${base}/hardware/linux_dmesg${NC}\n"
-
-	volatility -f ${dump} --profile=${finalProfil} linux_mount > ${base}/linux_mount
-	printf "[+] List mounted volume ${GREEN}dump${NC} in ${RED}${base}/linux_mount${NC}\n"
-
-
-
-
-
-
-
-	
-
-	
-	
-
-	
-
-
-	# volatility --info | grep Linux 
-
-	# echo ""
-	# printf "${PURPLE}Actual profiles installed : ${NC}"
-	# echo ""
-	# volatility --info 2>&1 | grep -i 'profile for linux' 
-	# echo ""
-	# echo "Which profiles are you wanting to use ?"
-	# read linProfile
-	# #echo $linProfile # Debug
-	# if [[ $(volatility -f ${dump} --profile=${linProfile} linux_banner 2>&1 | grep 'Linux version') ]]; then
-	# 	printf "${GREEN}[+] Good profile"
-
-	# 	if [[ $(strings ${dump} | grep -i "type=\"crypto_LUKS\"") ]]; then
-	# 		printf ", crypto_LUKS find ! Trying to get the Master Key...${NC}\n"
-	# 		./aeskeyfind ${dump} > ${base}/key.bin
-	# 		printf "[+] Master Key stored in ${CYAN}key.bin${NC} !\n"
-	# 		printf "${PURPLE}Would you like to mount a volume ? [Y/n]\n${NC}"
-	# 		read input
-	# 		if [[ $input == "Y" || $input == "y" ]]; then
-	# 		        echo "Enter the volume path : "
-	# 		        read volLin
-	# 		        mkdir ${base}/lin_vol 2>&1
-	# 		        cryptsetup --master-key-file key.bin luksOpen ${volLin} vol_lin
-	# 		        mount /dev/mapper/vol_lin ${base}/lin_vol 
-	# 		        chown ${USER}:users -R ${base}/lin_vol 
-	# 		        printf "${GREEN}[+] Volume successfully mounted${NC}"
-	# 		else
-	# 		        echo "false"
-	# 		fi
-	# 	else
-	# 		printf "\n${RED}[-] No LUKS type found in the dump${NC}"
-	# 	fi
-
-	# 	linBanner=$(volatility -f ${dump} --profile=${linProfile} linux_banner 2>&1)
-	# 	echo $linBanner > ${base}/audit.txt
-
-
-	# else
-	# 	printf "${RED}Bad profile.. Try again :(${NC}"
-	# 	exit
-	# fi
-
-	FinalCmds
-}
-
-function Requirement() {
-	printf "Check for required packages.\n"
-	commands_req=( "volatility" "bdemount (libbde-git)" "curl" "vagrant" "foremost" )
-	for i in "${commands_req[@]}"; do
-		printf "$i... "
-		if [[ $(command -v $i) ]]; then
-			printf "${GREEN}installed${NC}\n"
-		else
-			printf "${RED}not installed${NC}\n"
-			flag_exit="1"
-		fi	
-	done
-
-	if [[ $(vagrant plugin list | grep "scp" | awk '{print $1}') ]]; then
-		printf "vagrant-scp... ${GREEN}installed${NC}\n"
-	else
-		printf "vagrant-scp... ${RED}not installed${NC}\n"
-		printf "Run as ${LRED}root${NC} : vagrant plugin install vagrant-scp\n"
-	fi
-
-	if [[ $(locate bitlocker.py | head -n 1) ]]; then
-		printf "bitlocker plugin... ${GREEN}installed${NC}\n"
-	else
-		printf "bitlocker plugin... ${RED}not installed${NC}\n"
-		printf "Run as ${LRED}root${NC} : vagrant plugin install vagrant-scp\n"
-	fi
-
-}
-
-function Arbo() {
-	# Make the ${base} directory and audit.txt into ${base}
-	mkdir ${base} 2> /dev/null
-	touch ${base}/audit.txt
-
-	printf "${BLUE}Common volatility commands are performing${NC}\nResulats in ${RED}${PWD}/${base}/audit.txt${NC}.\n"
-	echo "Please wait..."
+	cd ${base}
+	cryptsetup --master-key-file key.bin luksOpen --cipher=${luks_cipher} --hash=${luks_hash} $1 luks_volume
+	printf "[+] ${GREEN}Luks volume${NC} decrypted.\n"
+	mount /dev/mapper/luks_volume luks_volume 
+	printf "[+] Luks volume ${GREEN}mounted${NC} !\n"
+	tree luks_volume
+	cd ../
 }
 
 function FinalCmds() {
 	# Do a foremost to recover some hidden files
-	# printf "\n\n${CYAN}Foremost in progress..${NC}\n"
-	# mkdir ${base}/foremost
-	# foremost -i ${dump} -o ${base}/foremost >> /dev/null
+	printf "\n\n${CYAN}Foremost in progress..${NC}\n"
+	mkdir ${base}/foremost
+	foremost -i ${dump} -o ${base}/foremost >> /dev/null
 
-	if [[ ${bdefind} ]]; then
-		printf "Don't forget to unmout your bitlocker volume ;-)\numount /mnt/tmp/\numount -l ${base}/bitlock_tmp"
-	fi
+	chmod -R 777 ${base}
+	chown -R ${USER}:${USER} ${base}
+
+	printf "[+] Done."
 }
+
+########################################################################################################
+####											MAIN 	 										    ####
+########################################################################################################
 
 Requirement
 if [[ $# == 0 ]]; then
 	printf "${RED}Use -h argument for help${NC}"
+elif [[ ${flag_exit} -eq 1 ]]; then
+	printf "[-] ${LRED}Missing dependancies${NC}.\n"
 elif [[ $(strings ${dump} | grep -i "Linux version") ]]; then
-	Linux
+	Linux "$6" "$8"
 else
-	# Sixth parameter, the plugin path
 	Windows "$6" "$8"
 fi
