@@ -14,8 +14,9 @@ where:
 
 Examples : 
 
-./auto_vol -d /home/maki/memory.raw -f /home/maki/tests -p /home/maki/zTools/plug_vol
-./auto_vol -d /home/maki/memory.raw -f /home/maki/tests -p /home/maki/zTools/plug_vol -a /home/maki/image.dd
+./auto_vol -d dump -f truecrypt_encrypted
+./auto_vol -d memory.raw -f bitlocker_encrypted -p /home/maki/zTools/plug_vol -a image.dd 
+./auto_vol -d memory.raw -f luks_encrypted -p /home/maki/zTools/plug_vol/ -a forensic.img"
 ```
 
 This script will create an output folder and store every result. It can also detect if it's a Windows or Linux dump.
@@ -36,21 +37,31 @@ This script will need :
 
 ```bash
 <-f argument>
-├── all_process.txt
+dump_analyze
 ├── audit.txt
-├── current_process.txt
-├── hash.txt
-├── iehistory.txt
-├── netscan.txt
-├── present_file.txt
-├── screenshot
-│   ├── session_0.msswindowstation.mssrestricteddesk.png
-│   ├── [...]
-│   └── session_1.WinSta0.Winlogon.png
-└── truecrypt_info.txt or bitlocker_infos.txt
-
+├── bitlocker_infos.txt
+├── bitlock_tmp
+│   ├── flag.jpg
+│   ├── $RECYCLE.BIN
+│   │   └── S-1-5-21-3927909812-3916504943-3837934204-1000
+│   │       └── desktop.ini
+│   └── System Volume Information
+│       ├── FVE2.{24e6f0ae-6a00-4f73-984b-75ce9942852d}
+│       ├── FVE2.{e40ad34d-dae9-4bc7-95bd-b16218c10f72}.1
+│       ├── FVE2.{e40ad34d-dae9-4bc7-95bd-b16218c10f72}.2
+│       ├── FVE2.{e40ad34d-dae9-4bc7-95bd-b16218c10f72}.3
+│       └── tracking.log
+└── cmd_windows
+    ├── clipboard
+    ├── cmdscan
+    ├── consoles
+    ├── filescan
+    ├── iehistory
+    ├── netscan
+    ├── pstree
+    └── psxview
 ```
-
+**Bitlocker example**
 
 ### Features 
 
