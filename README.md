@@ -16,7 +16,7 @@ Examples :
 
 ./auto_vol -d dump -f truecrypt_encrypted
 ./auto_vol -d memory.raw -f bitlocker_encrypted -p /home/maki/zTools/plug_vol -a image.dd 
-./auto_vol -d memory.raw -f luks_encrypted -p /home/maki/zTools/plug_vol/ -a forensic.img"
+./auto_vol -d memory.raw -f luks_encrypted -p /home/maki/zTools/plug_vol/ -a forensic.img
 ```
 
 This script will create an output folder and store every result. It can also detect if it's a Windows or Linux dump.
